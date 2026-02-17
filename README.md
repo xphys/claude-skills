@@ -7,6 +7,7 @@ My collection of [Claude Code skills](https://code.claude.com/docs/en/skills) bu
 | Skill | Type | Description |
 | :---- | :--- | :---------- |
 | [code-standard_nextjs-mantine](code-standard_nextjs-mantine/) | Auto-loaded | Coding conventions for Next.js + Mantine projects (Clerk, Drizzle, Zod, TanStack Query, Zustand, Vitest, Playwright) |
+| [landing-page_nextjs-mantine](landing-page_nextjs-mantine/) | Auto-loaded | Build production-ready landing pages with Next.js App Router and Mantine v7+ (sections, SEO, performance, a11y, animations) |
 
 ## Install
 
