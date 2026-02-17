@@ -6,14 +6,14 @@ My collection of [Claude Code skills](https://code.claude.com/docs/en/skills) bu
 
 | Skill | Type | Description |
 | :---- | :--- | :---------- |
-| [code-standard--nextjs-mantine](code-standard--nextjs-mantine/) | Auto-loaded | Coding conventions for Next.js + Mantine projects (Clerk, Drizzle, Zod, TanStack Query, Zustand, Vitest, Playwright) |
+| [code-standard_nextjs-mantine](code-standard_nextjs-mantine/) | Auto-loaded | Coding conventions for Next.js + Mantine projects (Clerk, Drizzle, Zod, TanStack Query, Zustand, Vitest, Playwright) |
 
 ## Install
 
 Copy a skill folder into `.claude/skills/` of your project:
 
 ```bash
-cp -r code-standard--nextjs-mantine your-project/.claude/skills/code-standard--nextjs-mantine
+cp -r code-standard_nextjs-mantine your-project/.claude/skills/code-standard_nextjs-mantine
 ```
 
 Claude Code auto-discovers it. Verify with `What skills are available?`
