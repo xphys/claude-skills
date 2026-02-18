@@ -22,11 +22,12 @@ description: >
 
 ```
 app/
-  layout.tsx              # Root layout: MantineProvider, ColorSchemeScript, global metadata
-  page.tsx                # Landing page entry (or per-route if multi-page)
+  [locale]/
+    layout.tsx            # Locale-aware root layout: MantineProvider, ColorSchemeScript, html lang
+    page.tsx              # Landing page entry (or per-route if multi-page)
   globals.css             # Global style overrides (minimal)
   robots.ts               # Dynamic robots.txt generation
-  sitemap.ts              # Dynamic sitemap generation
+  sitemap.ts              # Dynamic sitemap generation (includes all locale variants)
   favicon.ico
   opengraph-image.png     # Default OG image (1200x630)
 components/
@@ -38,6 +39,12 @@ components/
     [SectionName].tsx     # One file per section chosen from the catalog
   ui/
     MotionProvider.tsx     # 'use client' — LazyMotion + MotionConfig wrapper
+i18n/
+  config.ts               # Supported locales, default locale, type definitions
+  get-dictionary.ts       # Dynamic dictionary import helper
+  dictionaries/
+    en.json               # English strings (default)
+    [locale].json         # One file per additional locale
 lib/
   theme.ts                # Mantine createTheme configuration
   motion.ts               # Framer Motion shared variants and transitions (no 'use client' — pure constants)
@@ -46,6 +53,7 @@ lib/
 public/
   fonts/                  # Self-hosted WOFF2 font files
   images/                 # Static images (prefer next/image optimization)
+middleware.ts             # Locale detection and redirect (project root)
 postcss.config.cjs        # PostCSS config for Mantine
 next.config.mjs           # Next.js config with optimizePackageImports
 ```
@@ -97,12 +105,147 @@ export default {
 
 ### Root Layout
 
-`app/layout.tsx` must include:
+`app/[locale]/layout.tsx` must include:
 - `import '@mantine/core/styles.layer.css'` — use layer variant for easy style overriding
 - `mantineHtmlProps` spread onto `<html>` tag
 - `<ColorSchemeScript defaultColorScheme="auto" />` in `<head>` — prevents flash of unstyled content
 - `<MantineProvider theme={theme} defaultColorScheme="auto">` wrapping `{children}` in `<body>`
-- `lang` attribute on `<html>` matching the page language
+- `lang={locale}` attribute on `<html>` from the `[locale]` route param
+- `dir={locale === 'ar' ? 'rtl' : 'ltr'}` on `<html>` if any supported locale is RTL
+
+## Locale & Internationalization
+
+All landing pages use the `[locale]` dynamic segment pattern for i18n. Every user-visible string must come from a dictionary file — never hardcode text in components.
+
+### Locale Configuration
+
+Define supported locales in `i18n/config.ts`:
+
+```ts
+export const defaultLocale = 'en' as const;
+export const locales = ['en'] as const;
+export type Locale = (typeof locales)[number];
+```
+
+Add new locales by appending to the `locales` array and creating a matching dictionary file.
+
+### Middleware
+
+`middleware.ts` at the project root handles locale routing:
+
+- Reads locale from URL path first, then `Accept-Language` header, then falls back to `defaultLocale`
+- Redirects requests without a locale prefix (e.g., `/` → `/en`)
+- Matches only page routes — exclude `_next`, static files, and API routes
+
+```ts
+import { NextRequest, NextResponse } from 'next/server';
+import { defaultLocale, locales } from './i18n/config';
+
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Check if pathname already has a locale
+  const hasLocale = locales.some(
+    (locale) => pathname.startsWith(`/${locale}/`) || pathname === `/${locale}`,
+  );
+  if (hasLocale) return;
+
+  // Detect locale from Accept-Language header
+  const acceptLang = request.headers.get('Accept-Language');
+  const detected = acceptLang
+    ?.split(',')
+    .map((lang) => lang.split(';')[0].trim().split('-')[0])
+    .find((lang) => locales.includes(lang as any)) as Locale | undefined;
+
+  const locale = detected ?? defaultLocale;
+  request.nextUrl.pathname = `/${locale}${pathname}`;
+  return NextResponse.redirect(request.nextUrl);
+}
+
+export const config = {
+  matcher: ['/((?!_next|api|favicon.ico|robots.txt|sitemap.xml|.*\\..*).*)'],
+};
+```
+
+### Dictionary Files
+
+Each locale has a JSON file in `i18n/dictionaries/`. Structure keys by section name:
+
+```json
+{
+  "header": {
+    "nav": { "features": "Features", "pricing": "Pricing", "faq": "FAQ" },
+    "cta": "Get Started"
+  },
+  "hero": {
+    "headline": "Build something great",
+    "subheadline": "Start your journey today",
+    "cta": "Get Started",
+    "secondaryCta": "Watch Demo"
+  },
+  "footer": {
+    "copyright": "© {year} {company}. All rights reserved.",
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service"
+  }
+}
+```
+
+### Dictionary Loader
+
+`i18n/get-dictionary.ts` uses dynamic imports so only the requested locale is bundled:
+
+```ts
+import type { Locale } from './config';
+
+const dictionaries: Record<Locale, () => Promise<any>> = {
+  en: () => import('./dictionaries/en.json').then((m) => m.default),
+};
+
+export async function getDictionary(locale: Locale) {
+  return dictionaries[locale]();
+}
+```
+
+### Usage in Components
+
+Load the dictionary in page-level Server Components and pass section-specific slices as props:
+
+```tsx
+// app/[locale]/page.tsx
+import { getDictionary } from '@/i18n/get-dictionary';
+import type { Locale } from '@/i18n/config';
+import { Hero } from '@/components/sections/Hero';
+
+export default async function Page({ params }: { params: { locale: Locale } }) {
+  const dict = await getDictionary(params.locale);
+  return <Hero dict={dict.hero} />;
+}
+```
+
+Section components accept a typed `dict` prop — no global translation context needed for Server Components. For Client Components that need translations, pass the `dict` slice as a prop from the nearest Server Component parent.
+
+### Locale Rules
+
+- All user-visible strings must come from dictionary files — never hardcode text in components
+- Dictionary keys use section names as top-level keys (`hero`, `header`, `features`, etc.)
+- The default locale is always included in the URL path — no prefix stripping
+- Section components receive their dictionary slice via a `dict` prop, not a global hook
+- Use `generateStaticParams` to pre-render all locale variants at build time:
+  ```ts
+  import { locales } from '@/i18n/config';
+  export function generateStaticParams() {
+    return locales.map((locale) => ({ locale }));
+  }
+  ```
+
+### SEO for Multiple Locales
+
+- Set `<html lang={locale}>` in `app/[locale]/layout.tsx`
+- Add `alternates.languages` in `generateMetadata` to produce `hreflang` tags for every locale
+- Set `og:locale` matching the current locale
+- `app/sitemap.ts` must generate entries for every locale variant of each page
+- Each locale dictionary can include a `meta` key for locale-specific page titles and descriptions
 
 ## Theme Configuration
 
